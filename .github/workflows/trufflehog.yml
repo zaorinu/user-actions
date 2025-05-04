@@ -16,7 +16,7 @@ jobs:
 
       - name: Fetch and scan all repositories (excluding forks)
         env:
-          USERNAME: ${{ github.repository_owner }}
+          USERNAME: ${{ github.repository_owner }}  # This should be your GitHub username (e.g., zaorinu)
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir results
@@ -61,6 +61,7 @@ jobs:
 
             # Define the repository name to create the issue in
             REPO_NAME="user-actions"  # Set to your repository name
+            USERNAME="zaorinu"  # Ensure your username is explicitly set (e.g., zaorinu)
 
             # Create the issue in the specified repository, with the full repository name
             gh issue create --title "$TITLE" --body "$BODY" --label "trufflehog" --repo "$USERNAME/$REPO_NAME"
