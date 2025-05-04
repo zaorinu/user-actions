@@ -1,71 +1,38 @@
-name: Scan All Repos with TruffleHog
+name: TruffleHog Scan
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 12 * * 0' # Semanal aos domingos às 12h UTC
 
 jobs:
-  scan-all:
+  scan:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install TruffleHog and GitHub CLI
+      - name: Checkout (não necessário mas padrão)
+        uses: actions/checkout@v3
+
+      - name: Run TruffleHog scan
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gh
-          pip install trufflehog
+          docker run --rm -v "$PWD:/pwd" trufflesecurity/trufflehog:latest github --org=zaorinu > trufflehog-output.txt
 
-      - name: Fetch and scan all repositories (excluding forks)
-        env:
-          USERNAME: ${{ github.repository_owner }}  # Ensure this is your GitHub username
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check if output contains unverified or verified secrets
+        id: check
         run: |
-          mkdir results
-          echo "" > results/failures.txt
-          gh repo list "$USERNAME" --limit 100 --json name,sshUrl,isFork -q '.[] | select(.isFork == false) | "\(.name) \(.sshUrl)"' > repos.txt
-
-          while read -r name url; do
-            echo "🔍 Cloning $name"
-            # Convert SSH URL to HTTPS URL
-            HTTPS_URL=$(echo "$url" | sed 's/git@github.com:/https:\/\/github.com\//')
-            git clone "$HTTPS_URL" || { echo "Error cloning $name" >> ../results/failures.txt; continue; }
-            cd "$name"
-            echo "🚨 Scanning $name"
-
-            # Run TruffleHog scan with error handling
-            trufflehog --regex --entropy=True --json . > result.json || { echo "Error scanning $name" >> ../results/failures.txt; cd ..; rm -rf "$name"; continue; }
-
-            # Process TruffleHog result and check if any secrets were found
-            if [ -s result.json ]; then
-              found_secrets=$(jq -r '.results | length' result.json)
-              if [ "$found_secrets" -gt 0 ]; then
-                echo "$name:" >> ../results/failures.txt
-                jq -r '.results[] | "  - \(.file) \(.line)"' result.json >> ../results/failures.txt
-                echo "" >> ../results/failures.txt
-              fi
-            fi
-
-            cd ..
-            rm -rf "$name"
-          done < repos.txt
-
-      - name: Show summary
-        run: |
-          echo "=== Repositories with potential secrets ==="
-          cat results/failures.txt || echo "✅ All clean!"
-
-      - name: Create issue if any repo failed
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ -s results/failures.txt ]; then
-            TITLE="TruffleHog Secrets Report - $(date -u +'%Y-%m-%d %H:%M UTC')"
-            BODY="Secrets were detected in the following repositories and files:\n\n$(cat results/failures.txt)\n\nPlease investigate.\n\n_This issue was created automatically._"
-            
-            # Define the repository name to create the issue in
-            REPO_NAME="user-actions"  # Set to your repository name
-            USERNAME="zaorinu"  # Ensure your username is explicitly set (e.g., zaorinu)
-
-            # Create the issue in the specified repository, with the full repository name
-            gh issue create --title "$TITLE" --body "$BODY" --label "trufflehog" --repo "$USERNAME/$REPO_NAME"
+          if grep -q "Found unverified result\|Found verified result" trufflehog-output.txt; then
+            echo "found_secrets=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found_secrets=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Create GitHub Issue if secrets found
+        if: steps.check.outputs.found_secrets == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "TruffleHog Report - $(date -u +'%Y-%m-%d %H:%M UTC')" \
+            --body "$(cat trufflehog-output.txt)" \
+            --label "trufflehog" \
+            --repo zaorinu/user-actions
