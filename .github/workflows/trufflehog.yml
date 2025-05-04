@@ -14,14 +14,14 @@ jobs:
           sudo apt-get install -y gh
           pip install trufflehog
 
-      - name: Fetch and scan all repositories
+      - name: Fetch and scan all repositories (excluding forks)
         env:
           USERNAME: ${{ github.repository_owner }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir results
           echo "" > results/failures.txt
-          gh repo list "$USERNAME" --limit 100 --json name,sshUrl -q '.[] | "\(.name) \(.sshUrl)"' > repos.txt
+          gh repo list "$USERNAME" --limit 100 --json name,sshUrl,isFork -q '.[] | select(.isFork == false) | "\(.name) \(.sshUrl)"' > repos.txt
 
           while read -r name url; do
             echo "🔍 Cloning $name"
