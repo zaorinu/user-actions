@@ -16,7 +16,7 @@ jobs:
 
       - name: Fetch and scan all repositories (excluding forks)
         env:
-          USERNAME: ${{ github.repository_owner }}  # This should be your GitHub username (e.g., zaorinu)
+          USERNAME: ${{ github.repository_owner }}  # Ensure this is your GitHub username
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir results
@@ -36,9 +36,12 @@ jobs:
 
             # Process TruffleHog result and check if any secrets were found
             if [ -s result.json ]; then
-              echo "$name:" >> ../results/failures.txt
-              jq -r '.results[] | "  - \(.file) \(.line)"' result.json >> ../results/failures.txt
-              echo "" >> ../results/failures.txt
+              found_secrets=$(jq -r '.results | length' result.json)
+              if [ "$found_secrets" -gt 0 ]; then
+                echo "$name:" >> ../results/failures.txt
+                jq -r '.results[] | "  - \(.file) \(.line)"' result.json >> ../results/failures.txt
+                echo "" >> ../results/failures.txt
+              fi
             fi
 
             cd ..
@@ -50,6 +53,11 @@ jobs:
           echo "=== Repositories with potential secrets ==="
           cat results/failures.txt || echo "✅ All clean!"
 
+      - name: Ensure 'trufflehog' label exists
+        run: |
+          # Check if the 'trufflehog' label exists, create it if not
+          gh label list --repo "$USERNAME/$REPO_NAME" | grep -q 'trufflehog' || gh label create 'trufflehog' --color 'F00' --repo "$USERNAME/$REPO_NAME"
+
       - name: Create issue if any repo failed
         if: success()
         env:
@@ -58,7 +66,7 @@ jobs:
           if [ -s results/failures.txt ]; then
             TITLE="TruffleHog Secrets Report - $(date -u +'%Y-%m-%d %H:%M UTC')"
             BODY="Secrets were detected in the following repositories and files:\n\n$(cat results/failures.txt)\n\nPlease investigate.\n\n_This issue was created automatically._"
-
+            
             # Define the repository name to create the issue in
             REPO_NAME="user-actions"  # Set to your repository name
             USERNAME="zaorinu"  # Ensure your username is explicitly set (e.g., zaorinu)
