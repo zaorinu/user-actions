@@ -14,12 +14,10 @@ jobs:
           sudo apt-get install -y gh
           pip install trufflehog
 
-      - name: Authenticate GitHub CLI
-        run: gh auth login --with-token < $GITHUB_TOKEN
-
       - name: Fetch and scan all repositories
         env:
           USERNAME: ${{ github.repository_owner }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir results
           echo "" > results/failures.txt
