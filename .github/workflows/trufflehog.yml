@@ -27,15 +27,17 @@ jobs:
             echo "🔍 Cloning $name"
             # Convert SSH URL to HTTPS URL
             HTTPS_URL=$(echo "$url" | sed 's/git@github.com:/https:\/\/github.com\//')
-            git clone "$HTTPS_URL"
+            git clone "$HTTPS_URL" || { echo "Error cloning $name" >> ../results/failures.txt; continue; }
             cd "$name"
             echo "🚨 Scanning $name"
-            
-            FOUND=$(trufflehog filesystem . --fail --only-verified --regex | tee /dev/stdout | grep -oP '(?<=Filename: ).*')
-            
-            if [ ! -z "$FOUND" ]; then
+
+            # Run TruffleHog scan with error handling
+            trufflehog --regex --entropy=True --json . > result.json || { echo "Error scanning $name" >> ../results/failures.txt; cd ..; rm -rf "$name"; continue; }
+
+            # Process TruffleHog result and check if any secrets were found
+            if [ -s result.json ]; then
               echo "$name:" >> ../results/failures.txt
-              echo "$FOUND" | sed 's/^/  - /' >> ../results/failures.txt
+              jq -r '.results[] | "  - \(.file) \(.line)"' result.json >> ../results/failures.txt
               echo "" >> ../results/failures.txt
             fi
 
