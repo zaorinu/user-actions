@@ -62,6 +62,6 @@ jobs:
             # Define the repository name to create the issue in
             REPO_NAME="user-actions"  # Set to your repository name
 
-            # Create the issue in the specified repository
+            # Create the issue in the specified repository, with the full repository name
             gh issue create --title "$TITLE" --body "$BODY" --label "trufflehog" --repo "$USERNAME/$REPO_NAME"
           fi
