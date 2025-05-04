@@ -53,11 +53,6 @@ jobs:
           echo "=== Repositories with potential secrets ==="
           cat results/failures.txt || echo "✅ All clean!"
 
-      - name: Ensure 'trufflehog' label exists
-        run: |
-          # Check if the 'trufflehog' label exists, create it if not
-          gh label list --repo "$USERNAME/$REPO_NAME" | grep -q 'trufflehog' || gh label create 'trufflehog' --color 'F00' --repo "$USERNAME/$REPO_NAME"
-
       - name: Create issue if any repo failed
         if: success()
         env:
