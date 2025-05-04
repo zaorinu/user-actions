@@ -3,21 +3,30 @@ name: TruffleHog Scan
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 12 * * 0' # Semanal aos domingos às 12h UTC
+    - cron: '0 12 * * 0' # Weekly on Sundays at 12:00 PM UTC
 
 jobs:
   scan:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout (não necessário mas padrão)
+      - name: Checkout (optional but standard)
         uses: actions/checkout@v3
+
+      - name: Close old issues with 'trufflehog' label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          issues=$(gh issue list --label "trufflehog" --state open --json number --jq '.[].number')
+          for issue in $issues; do
+            gh issue close $issue --comment "Automatically closed before new TruffleHog scan."
+          done
 
       - name: Run TruffleHog scan
         run: |
           docker run --rm -v "$PWD:/pwd" trufflesecurity/trufflehog:latest github --org=zaorinu > trufflehog-output.txt
 
-      - name: Check if output contains unverified or verified secrets
+      - name: Check if any secrets were found
         id: check
         run: |
           if grep -q "Found unverified result\|Found verified result" trufflehog-output.txt; then
@@ -26,7 +35,7 @@ jobs:
             echo "found_secrets=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create GitHub Issue if secrets found
+      - name: Create GitHub Issue if secrets were found
         if: steps.check.outputs.found_secrets == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
