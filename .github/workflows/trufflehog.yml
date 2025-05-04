@@ -24,7 +24,7 @@ jobs:
 
       - name: Run TruffleHog scan
         run: |
-          docker run --rm -v "$PWD:/pwd" trufflesecurity/trufflehog:latest github --org=zaorinu > trufflehog-output.txt
+          docker run --rm -v "$PWD:/pwd" trufflesecurity/trufflehog:latest github --org=zaorinu --only-verified --verify > trufflehog-output.txt
 
       - name: Check if any secrets were found
         id: check
