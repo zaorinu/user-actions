@@ -58,5 +58,10 @@ jobs:
           if [ -s results/failures.txt ]; then
             TITLE="TruffleHog Secrets Report - $(date -u +'%Y-%m-%d %H:%M UTC')"
             BODY="Secrets were detected in the following repositories and files:\n\n$(cat results/failures.txt)\n\nPlease investigate.\n\n_This issue was created automatically._"
-            gh issue create --title "$TITLE" --body "$BODY" --label "trufflehog" --repo $USERNAME/$REPO_NAME
+
+            # Define the repository name to create the issue in
+            REPO_NAME="user-actions"  # Set to your repository name
+
+            # Create the issue in the specified repository
+            gh issue create --title "$TITLE" --body "$BODY" --label "trufflehog" --repo "$USERNAME/$REPO_NAME"
           fi
