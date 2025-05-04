@@ -1,0 +1,64 @@
+name: Scan All Repos with TruffleHog
+
+on:
+  workflow_dispatch:
+
+jobs:
+  scan-all:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install TruffleHog and GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+          pip install trufflehog
+
+      - name: Authenticate GitHub CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "${GH_TOKEN}" | gh auth login --with-token
+
+      - name: Fetch and scan all repositories
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          USERNAME: ${{ github.repository_owner }}
+        run: |
+          mkdir results
+          echo "" > results/failures.txt
+          gh repo list "$USERNAME" --limit 100 --json name,sshUrl -q '.[] | "\(.name) \(.sshUrl)"' > repos.txt
+
+          while read -r name url; do
+            echo "🔍 Cloning $name"
+            git clone "$url"
+            cd "$name"
+            echo "🚨 Scanning $name"
+            
+            FOUND=$(trufflehog filesystem . --fail --only-verified --regex | tee /dev/stdout | grep -oP '(?<=Filename: ).*')
+            
+            if [ ! -z "$FOUND" ]; then
+              echo "$name:" >> ../results/failures.txt
+              echo "$FOUND" | sed 's/^/  - /' >> ../results/failures.txt
+              echo "" >> ../results/failures.txt
+            fi
+
+            cd ..
+            rm -rf "$name"
+          done < repos.txt
+
+      - name: Show summary
+        run: |
+          echo "=== Repositories with potential secrets ==="
+          cat results/failures.txt || echo "✅ All clean!"
+
+      - name: Create issue if any repo failed
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -s results/failures.txt ]; then
+            TITLE="TruffleHog Secrets Report - $(date -u +'%Y-%m-%d %H:%M UTC')"
+            BODY="Secrets were detected in the following repositories and files:\n\n$(cat results/failures.txt)\n\nPlease investigate.\n\n_This issue was created automatically._"
+            gh issue create --title "$TITLE" --body "$BODY" --label "trufflehog"
+          fi
