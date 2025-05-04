@@ -25,7 +25,9 @@ jobs:
 
           while read -r name url; do
             echo "🔍 Cloning $name"
-            git clone "$url"
+            # Convert SSH URL to HTTPS URL
+            HTTPS_URL=$(echo "$url" | sed 's/git@github.com:/https:\/\/github.com\//')
+            git clone "$HTTPS_URL"
             cd "$name"
             echo "🚨 Scanning $name"
             
