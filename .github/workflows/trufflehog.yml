@@ -1,81 +1,47 @@
 name: TruffleHog Scan
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 2 * * *' # Every 02:00AM UTC
+workflow_dispatch:
+schedule:
+- cron: '0 2 * * *' # Every 02:00AM UTC
 
 jobs:
-  checkout:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+scan:
+runs-on: ubuntu-latest
 
-  close_old_issues:
-    runs-on: ubuntu-latest
-    needs: checkout
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+steps:  
+  - name: Checkout (optional but standard)  
+    uses: actions/checkout@v3  
 
-      - name: Close old issues with 'trufflehog' label
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          issues=$(gh issue list --label "trufflehog" --state open --json number --jq '.[].number')
-          for issue in $issues; do
-            gh issue close $issue --comment "Automatically closed before new TruffleHog scan."
-          done
+  - name: Close old issues with 'trufflehog' label  
+    env:  
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
+    run: |  
+      issues=$(gh issue list --label "trufflehog" --state open --json number --jq '.[].number')  
+      for issue in $issues; do  
+        gh issue close $issue --comment "Automatically closed before new TruffleHog scan."  
+      done  
 
-  trufflehog_scan:
-    runs-on: ubuntu-latest
-    needs: checkout
-    outputs:
-      found_secrets: ${{ steps.check.outputs.found_secrets }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+  - name: Run TruffleHog scan  
+    run: |  
+      docker run --rm -v "$PWD:/pwd" trufflesecurity/trufflehog:latest github --org=zaorinu --only-verified > trufflehog-output.txt  
 
-      - name: Run TruffleHog scan
-        run: |
-          docker run --rm -v "$PWD:/pwd" trufflesecurity/trufflehog:latest github --org=zaorinu --only-verified > trufflehog-output.txt
+  - name: Check if any secrets were found  
+    id: check  
+    run: |  
+      if grep -q "Found unverified result\|Found verified result" trufflehog-output.txt; then  
+        echo "found_secrets=true" >> "$GITHUB_OUTPUT"  
+      else  
+        echo "found_secrets=false" >> "$GITHUB_OUTPUT"  
+      fi  
 
-      - name: Check if any secrets were found
-        id: check
-        run: |
-          if grep -q "Found unverified result\|Found verified result" trufflehog-output.txt; then
-            echo "found_secrets=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "found_secrets=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Upload scan result
-        uses: actions/upload-artifact@v3
-        with:
-          name: trufflehog-output
-          path: trufflehog-output.txt
-
-  create_issue:
-    runs-on: ubuntu-latest
-    needs: trufflehog_scan
-    if: needs.trufflehog_scan.outputs.found_secrets == 'true'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Download scan result
-        uses: actions/download-artifact@v3
-        with:
-          name: trufflehog-output
-          path: .
-
-      - name: Create GitHub Issue if secrets were found
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh issue create \
-            --title "TruffleHog Report - $(date -u +'%Y-%m-%d %H:%M UTC')" \
-            --body "$(cat trufflehog-output.txt)" \
-            --label "trufflehog" \
-            --repo zaorinu/user-actions
+  - name: Create GitHub Issue if secrets were found  
+    if: steps.check.outputs.found_secrets == 'true'  
+    env:  
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
+    run: |  
+      gh issue create \  
+        --title "TruffleHog Report - $(date -u +'%Y-%m-%d %H:%M UTC')" \  
+        --body "$(cat trufflehog-output.txt)" \  
+        --label "trufflehog" \  
+        --repo zaorinu/user-actions
