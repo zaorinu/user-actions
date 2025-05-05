@@ -3,17 +3,28 @@ name: TruffleHog Scan
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 * * *' # Every day at 02:00AM UTC
+    - cron: '0 2 * * *' # Daily at 02:00 UTC
 
 jobs:
-  scan:
+  checkout:
+    name: Checkout Repository
     runs-on: ubuntu-latest
-
+    outputs:
+      repo-path: ${{ steps.setpath.outputs.path }}
     steps:
-      - name: Checkout (optional but standard)
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Close old issues with 'trufflehog' label
+      - name: Set Output Path
+        id: setpath
+        run: echo "path=$(pwd)" >> "$GITHUB_OUTPUT"
+
+  close_old_issues:
+    name: Close Old TruffleHog Issues
+    runs-on: ubuntu-latest
+    needs: checkout
+    steps:
+      - name: Close Issues with 'trufflehog' Label
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -22,11 +33,18 @@ jobs:
             gh issue close $issue --comment "Automatically closed before new TruffleHog scan."
           done
 
-      - name: Run TruffleHog scan
+  scan:
+    name: Run TruffleHog Scan
+    runs-on: ubuntu-latest
+    needs: checkout
+    outputs:
+      found_secrets: ${{ steps.check.outputs.found_secrets }}
+    steps:
+      - name: Run TruffleHog Docker Scan
         run: |
           docker run --rm -v "$PWD:/pwd" trufflesecurity/trufflehog:latest github --org=zaorinu --only-verified > trufflehog-output.txt
 
-      - name: Check if any secrets were found
+      - name: Check Scan Results
         id: check
         run: |
           if grep -q "Found unverified result\|Found verified result" trufflehog-output.txt; then
@@ -35,13 +53,25 @@ jobs:
             echo "found_secrets=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create GitHub Issue if secrets were found
-        if: steps.check.outputs.found_secrets == 'true'
+      - name: Save Scan Output
+        if: always()
+        run: cp trufflehog-output.txt $GITHUB_WORKSPACE/trufflehog-output.txt
+
+  create_issue:
+    name: Create GitHub Issue if Secrets Found
+    runs-on: ubuntu-latest
+    needs: scan
+    if: needs.scan.outputs.found_secrets == 'true'
+    steps:
+      - name: Download Scan Output
+        run: echo "No artifacts to download, using workspace copy"
+
+      - name: Create Issue on GitHub
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh issue create \
             --title "TruffleHog Report - $(date -u +'%Y-%m-%d %H:%M UTC')" \
-            --body "$(cat trufflehog-output.txt)" \
+            --body "$(cat $GITHUB_WORKSPACE/trufflehog-output.txt)" \
             --label "trufflehog" \
             --repo zaorinu/user-actions
